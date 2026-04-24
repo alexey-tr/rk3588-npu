@@ -97,7 +97,10 @@ typedef struct npu_dpu_rdma_desc {
  uint8_t comb_use;             // 0x5044 [10:8]
  uint8_t burst_len;            // 0x5044 [14:11]
  uint8_t in_precision;         // 0x5044 [17:15]
- uint32_t weight;              // 0x5068
+ uint8_t m_weight;             // 0x5068 [7:0]
+ uint8_t b_weight;             // 0x5068 [15:8]
+ uint8_t n_weight;             // 0x5068 [23:16]
+ uint8_t e_weight;             // 0x5068 [31:24]
  uint32_t ew_surf_notch;       // 0x506C
 } npu_dpu_rdma_desc;
 
