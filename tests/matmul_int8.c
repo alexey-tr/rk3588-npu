@@ -201,7 +201,7 @@ int main(int argc, char **argv) {
     .task_obj_addr = tasks_obj,
     .regcfg_obj_addr = 0,
     .task_base_addr = 0,
-    .user_data = 0,
+    .hw_elapse_time = 0,
     .core_mask = 1,
     .fence_fd = -1,
     .subcore_task = { // Only use core 1, nothing for core 2/3

@@ -136,6 +136,65 @@
 #define DPU_LUT_LO_SLOPE_SCALE   0x4128 // LO LUT slope scale
 #define DPU_LUT_LO_SLOPE_SHIFT   0x412C // LO LUT slope shift
 
+#define DPU_RDMA_S_POINTER       0x5004 // Single register group pointer
+#define DPU_RDMA_DATA_CUBE_WIDTH   0x500C // Input cube width
+#define DPU_RDMA_DATA_CUBE_HEIGHT  0x5010 // Input cube height
+#define DPU_RDMA_DATA_CUBE_CHANNEL 0x5014 // Input cube channel
+#define DPU_RDMA_SRC_BASE_ADDR   0x5018 // Base address of the input cube
+#define DPU_RDMA_BRDMA_CFG       0x501C // Configurations of BRDMA
+#define DPU_RDMA_BS_BASE_ADDR    0x5020 // Source base address of BRDMA
+#define DPU_RDMA_NRDMA_CFG       0x5028 // Configurations of NRDMA
+#define DPU_RDMA_BN_BASE_ADDR    0x502C // Source base address of NRDMA
+
+// 31:30 RW erdma_data_mode - 0:per_channel, 1:per_pixel, 2:per_channel_by_pixel
+// 29    RW erdma_surf_mode - 0:1_surf, 1:2_surf
+// 28    RW erdma_nonalign  - 0:normal, 1:non-align
+// 27:4  RO reserved
+// 3:2   RW erdma_data_size - 0:4bit, 1:8bit, 2:16bit, 3:32bit
+// 1     RW ov4k_bypass     - 0:enable over-4k split, 1:bypass
+// 0     RW erdma_disable   - 0:enabled, 1:disabled
+#define DPU_RDMA_ERDMA_CFG       0x5034 // Configurations of ERDMA
+
+#define DPU_RDMA_EW_BASE_ADDR    0x5038 // Source base address of ERDMA - Base address to read EW operand.
+
+// ew_surf_stride
+// 31:4 RW The surface stride of the element wise feature map;
+// If erdma_data_mode is per channel, it need set to be 1.
+// 3:0 RO reserved
+#define DPU_RDMA_EW_SURF_STRIDE  0x5040 // ew_surf_stride
+
+// 31:18 RO reserved
+// 17:15 RW in_precision Input data precision.
+//                      3'd0: Integer 8bit;
+//                      3'd1: Integer 16bit;
+//                      3'd2: Gloat point 16bit;
+//                      3'd3: Bfloat 16bit;
+//                      3'd4: Integer 32bit;
+//                      3'd5: Float point 32bit;
+//                      3'd6: Integer 4bit.
+// 14:11 RW burst_len - Burst length.
+//                      4'd3: Burst4;
+//                      4'd7: Burst8;
+//                      4'd15: Burst16.
+// 10:8 RW comb_use
+//                      [0]: If enable MRDMA and ERDMA to read the same data;
+//                      [1]: Read the data to MRDMA;
+//                      [2]: Read the data to ERDMA.
+// 7:5 RW proc_precision - Process precision.
+//                      3'd0: Integer 8bit;
+//                      3'd1: Integer 16bit;
+//                      3'd2: Float point 16bit;
+//                      3'd3: Bfloat 16bit;
+//                      3'd4: Integer 32bit;
+//                      3'd5: Float point 32bit;
+//                      3'd6: Integer 4bit.
+#define DPU_RDMA_FEATURE_MODE_CFG 0x5044
+#define DPU_RDMA_SRC_DMA_CFG     0x5048 // Configuration of the source read DMA
+#define DPU_RDMA_SURF_NOTCH       0x504C // Surface notch
+#define DPU_RDMA_PAD_CFG         0x5064 // Configuration of the pad
+#define DPU_RDMA_WEIGHT          0x5068 // Weight of the arbiter
+#define DPU_RDMA_EW_SURF_NOTCH   0x506C // Surface notch
+
 // TODO Add PPU
 
 // NPU capability is limited to the following units
@@ -165,7 +224,7 @@
 #define PC_ENABLE_DPU  0x08  // ?? Interrupt
 #define PC_ENABLE_PPU  0x10  // ?? Interrupt
 
-#define NPUOP(op, value, reg) (((uint64_t)(op & 0xffff))<< 48) | ( ((uint64_t)(value & 0xffffffff)) << 16) | (uint64_t)(reg & 0xffff)
+#define NPUOP(op, value, reg) (((uint64_t)((op) & 0xffff))<< 48) | ( ((uint64_t)((value) & 0xffffffff)) << 16) | (uint64_t)((reg) & 0xffff)
 
 #define NPU_CBUF_BANK_SIZE 32768
 #define NPU_CBUF_BANKS 12

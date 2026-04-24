@@ -52,6 +52,10 @@ void* mem_allocate(int fd, size_t size, uint64_t *dma_addr, uint64_t *obj, uint3
   }
 
   void *map = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, mem_map.offset);
+  if (map == MAP_FAILED) {
+      printf("mmap failed: %s\n", strerror(errno));
+      return NULL;
+  }
 
   *dma_addr = mem_create.dma_addr;
   *obj = mem_create.obj_addr;
