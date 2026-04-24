@@ -231,8 +231,11 @@
 
 enum  { direct_convolution = 0}; 
 enum  { precision_int8 = 0,
+        precision_int16 = 1,
         precision_float16 = 2,
+        precision_bfloat16 = 3,
         precision_int32 = 4,
-        precision_float32 = 5};
+        precision_float32 = 5,
+        precision_int4 = 6};
 
 #endif //NPU_HW_H
