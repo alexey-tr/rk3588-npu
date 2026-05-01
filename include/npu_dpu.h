@@ -25,6 +25,25 @@
 
 enum tp_precision { tp_precision_8bit, tp_precision_16bit};
 
+/* DPU EW_CFG 0x4070 [2] */
+enum ew_op_type_t {
+    ew_op_alu = 0,  /* ALU path: use ew_alu_algo */
+    ew_op_mul = 1,  /* MUL path: element-wise multiply */
+};
+
+/* DPU EW_CFG 0x4070 [19:16] — only applies when ew_op_type == ew_op_alu */
+enum ew_alu_algo_t {
+    ew_alu_max   = 0,
+    ew_alu_min   = 1,
+    ew_alu_add   = 2,
+    ew_alu_div   = 3,
+    ew_alu_minus = 4,
+    ew_alu_abs   = 5,
+    ew_alu_neg   = 6,
+    ew_alu_floor = 7,
+    ew_alu_ceil  = 8,
+};
+
 typedef struct npu_dpu_desc {
  uint8_t burst_len;         // 0x400C [8:5]
  uint8_t conv_mode;         // 0x400C [4:3]
@@ -57,14 +76,14 @@ typedef struct npu_dpu_desc {
  uint8_t bn_bypass;         // 0x4060 [0]
  uint8_t ew_bypass;         // 0x4070 [0]
  uint8_t ew_op_bypass;      // 0x4070 [1]
- uint8_t ew_op_type;        // 0x4070 [2]
+ enum ew_op_type_t ew_op_type;  // 0x4070 [2]
  uint8_t ew_mul_prelu;      // 0x4070 [5]
  uint8_t ew_op_src;         // 0x4070 [6]
  uint8_t ew_lut_bypass;     // 0x4070 [7]
  uint8_t ew_op_cvt_bypass;  // 0x4070 [8]
  uint8_t ew_relu_bypass;    // 0x4070 [9]
  uint8_t ew_relux_en;       // 0x4070 [10]
- uint8_t ew_alu_algo;       // 0x4070 [19:16]
+ enum ew_alu_algo_t ew_alu_algo; // 0x4070 [19:16]
  uint8_t ew_binary_en;      // 0x4070 [20]
  uint8_t ew_equal_en;       // 0x4070 [21]
  uint8_t edata_size;        // 0x4070 [23:22]
