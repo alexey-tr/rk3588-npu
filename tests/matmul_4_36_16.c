@@ -114,7 +114,7 @@ int main(int argc, char **argv) {
   // Reset the NPU
   npu_reset(fd);
 
-  matmul_params_t params;
+  matmul_params_t params = {0};
   params.m = M;
   params.k = 64;
   params.n = N;

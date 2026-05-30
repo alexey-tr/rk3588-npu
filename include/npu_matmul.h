@@ -33,9 +33,17 @@ typedef struct {
   uint64_t  *tasks;
 
   uint8_t   fp32tofp16;
+
+  /* Override for plane-stride between output channel surfaces, in elements of M
+   * (i.e. number of rows in the full destination plane). 0 = use this tile's m
+   * (current behaviour: single-tile contiguous output). Non-zero lets a tile
+   * write its (m, n) sub-rectangle into a larger pre-allocated output buffer
+   * whose row count is `out_surf_stride`. */
+  uint32_t  out_surf_stride;
 } matmul_params_t;
 
 int gen_matmul_fp16(matmul_params_t *params);
+int gen_matmul_bf16(matmul_params_t *params);
 int gen_matmul_int8(matmul_params_t *params);
 int feature_data(int C, int H, int W, int C2, int c, int h, int w);
 int weight_fp16(int C, int k, int c);

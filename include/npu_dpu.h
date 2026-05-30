@@ -61,6 +61,10 @@ typedef struct npu_dpu_desc {
  uint8_t bs_alu_bypass;     // 0x4040 [1]
  uint8_t bs_mul_bypass;     // 0x4040 [4]
  uint8_t bs_relu_bypass;    // 0x4040 [6]
+ uint8_t bs_alu_src;        // 0x4040 [8]
+ uint8_t bs_alu_algo;       // 0x4040 [19:16]
+ uint32_t bs_alu_cfg;       // 0x4044
+ uint32_t bs_mul_cfg;       // 0x4048
  uint8_t tp_org_en;         // 0x4050 [27]
  uint8_t od_bypass;         // 0x4050 [1]
  uint8_t size_e_2;          // 0x4050 [10:8]

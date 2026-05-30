@@ -208,7 +208,14 @@ void gen_matmul_task(uint64_t *ops, npu_cna_desc *cna_desc, npu_core_desc *core_
  * TODO: Fix a) & b) 
  *
  */
-int gen_matmul_fp16(matmul_params_t *params) {
+/* fp16 and bf16 matmul are byte-identical (2 bytes/elem, C2=8) except for the
+ * precision enum at 5 register sites and the output-precision selection. `prec`
+ * is precision_float16 or precision_bfloat16. Output:
+ *   fp32tofp16==0 -> FP32 accumulator output (4 bytes), works for both.
+ *   fp32tofp16==1 -> 2-byte output of type `prec`. FP16 uses the WDMA fp32->fp16
+ *     downcast (fp32tofp16_en); BF16 has no such bit, so it relies on
+ *     out_precision=bfloat16 to write the accumulator as bf16. */
+static int gen_matmul_2byte(matmul_params_t *params, uint8_t prec) {
 
    npu_cna_desc cna_desc;
    npu_core_desc core_desc;
@@ -220,8 +227,8 @@ int gen_matmul_fp16(matmul_params_t *params) {
    int surf_stride;
 
    cna_desc.conv_mode = direct_convolution;
-   cna_desc.in_precision = precision_float16;
-   cna_desc.proc_precision = precision_float16;
+   cna_desc.in_precision = prec;
+   cna_desc.proc_precision = prec;
 
    cna_desc.kernel_groups = 0;
    cna_desc.feature_grains = params->m+1;
@@ -286,7 +293,7 @@ int gen_matmul_fp16(matmul_params_t *params) {
    cna_desc.dma_channel = cna_desc.datain_channel;
    cna_desc.decompress_addr0 = params->weights_dma;
 
-   core_desc.proc_precision = precision_float16;
+   core_desc.proc_precision = prec;
    core_desc.qd_en = 1;
    core_desc.dataout_height = cna_desc.dataout_height - 1;
    core_desc.dataout_width = cna_desc.dataout_width - 1;
@@ -296,11 +303,15 @@ int gen_matmul_fp16(matmul_params_t *params) {
    dpu_desc.conv_mode = direct_convolution;
    dpu_desc.output_mode = 0x2;
    dpu_desc.flying_mode = 0x0;
-   dpu_desc.out_precision = (params->fp32tofp16==0) ? precision_float32 : precision_float16;
-   dpu_desc.in_precision = precision_float16;
-   dpu_desc.proc_precision = precision_float16;
+   dpu_desc.out_precision = (params->fp32tofp16==0) ? precision_float32 : prec;
+   dpu_desc.in_precision = prec;
+   dpu_desc.proc_precision = prec;
    dpu_desc.dst_base_addr = params->output_dma;
-   dpu_desc.dst_surf_stride = cna_desc.dataout_height * cna_desc.dataout_width;
+   {
+     uint32_t row = params->out_surf_stride ? params->out_surf_stride
+                                            : (uint32_t)(cna_desc.dataout_height * cna_desc.dataout_width);
+     dpu_desc.dst_surf_stride = row;
+   }
    dpu_desc.width = core_desc.dataout_width ;
    dpu_desc.height = core_desc.dataout_height;
    dpu_desc.channel = core_desc.dataout_channel;
@@ -317,7 +328,9 @@ int gen_matmul_fp16(matmul_params_t *params) {
    dpu_desc.ew_lut_bypass =1;
    dpu_desc.ew_op_cvt_bypass =1;
    dpu_desc.ew_relu_bypass=1;
-   dpu_desc.fp32tofp16_en = params->fp32tofp16 & 0x1;
+   /* fp32tofp16_en is the WDMA's FP32->FP16 downcast — fp16-output only. bf16 output
+    * has no such bit and leans on out_precision=bfloat16 instead. */
+   dpu_desc.fp32tofp16_en = (params->fp32tofp16 && prec == precision_float16) ? 1 : 0;
    dpu_desc.out_cvt_scale =1;
    if (params->fp32tofp16 ==0) {
      dpu_desc.size_e_2 = 3;
@@ -337,6 +350,14 @@ int gen_matmul_fp16(matmul_params_t *params) {
    gen_matmul_task(params->tasks,&cna_desc,&core_desc,&dpu_desc);
 
    return 0;
+}
+
+int gen_matmul_fp16(matmul_params_t *params) {
+   return gen_matmul_2byte(params, precision_float16);
+}
+
+int gen_matmul_bf16(matmul_params_t *params) {
+   return gen_matmul_2byte(params, precision_bfloat16);
 }
 
 /*
@@ -440,7 +461,11 @@ int gen_matmul_int8(matmul_params_t *params) {
    dpu_desc.in_precision = precision_int8;
    dpu_desc.proc_precision = precision_int8;
    dpu_desc.dst_base_addr = params->output_dma;
-   dpu_desc.dst_surf_stride = cna_desc.dataout_height * cna_desc.dataout_width;
+   {
+     uint32_t row = params->out_surf_stride ? params->out_surf_stride
+                                            : (uint32_t)(cna_desc.dataout_height * cna_desc.dataout_width);
+     dpu_desc.dst_surf_stride = row;
+   }
    dpu_desc.width = core_desc.dataout_width ;
    dpu_desc.height = core_desc.dataout_height;
    dpu_desc.channel = core_desc.dataout_channel;
