@@ -40,6 +40,11 @@ typedef struct {
    * write its (m, n) sub-rectangle into a larger pre-allocated output buffer
    * whose row count is `out_surf_stride`. */
   uint32_t  out_surf_stride;
+
+  /* Fuse a ReLU (max(0, x)) epilogue into the DPU's BS stage. 0 = bypass (plain
+   * matmul, default); 1 = clamp negatives to zero on the accumulator before the
+   * output downcast. No extra DMA/op-count cost — see gen_matmul_task BS bits. */
+  uint8_t   relu;
 } matmul_params_t;
 
 int gen_matmul_fp16(matmul_params_t *params);

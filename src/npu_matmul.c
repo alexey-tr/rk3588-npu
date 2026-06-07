@@ -315,10 +315,15 @@ static int gen_matmul_2byte(matmul_params_t *params, uint8_t prec) {
    dpu_desc.width = core_desc.dataout_width ;
    dpu_desc.height = core_desc.dataout_height;
    dpu_desc.channel = core_desc.dataout_channel;
-   dpu_desc.bs_bypass = 1;
-   dpu_desc.bs_alu_bypass = 1;
-   dpu_desc.bs_mul_bypass = 1;
-   dpu_desc.bs_relu_bypass = 1;
+   /* BS stage: bypassed for a plain matmul. params->relu engages only the BS ReLU
+    * sub-unit (alu/mul still bypassed) -> max(0, x) on the accumulator, applied
+    * before the WDMA output downcast (order-correct: relu commutes with the cast).
+    * DPU_BS_RELUX_CMP_VALUE stays 0 (gen_matmul_task ops[66]) so there is no upper
+    * clamp. Validated recipe: vitals/relu.c. */
+   dpu_desc.bs_bypass      = params->relu ? 0 : 1;
+   dpu_desc.bs_alu_bypass  = 1;
+   dpu_desc.bs_mul_bypass  = 1;
+   dpu_desc.bs_relu_bypass = params->relu ? 0 : 1;
    dpu_desc.bn_bypass =1;
    dpu_desc.bn_alu_bypass = 1;
    dpu_desc.bn_mul_bypass = 1;
@@ -469,10 +474,12 @@ int gen_matmul_int8(matmul_params_t *params) {
    dpu_desc.width = core_desc.dataout_width ;
    dpu_desc.height = core_desc.dataout_height;
    dpu_desc.channel = core_desc.dataout_channel;
-   dpu_desc.bs_bypass = 1;
-   dpu_desc.bs_alu_bypass = 1;
-   dpu_desc.bs_mul_bypass = 1;
-   dpu_desc.bs_relu_bypass = 1;
+   /* BS ReLU on the int32 accumulator: max(0, x) clamps negatives, valid in any
+    * numeric format. See gen_matmul_2byte for the recipe rationale. */
+   dpu_desc.bs_bypass      = params->relu ? 0 : 1;
+   dpu_desc.bs_alu_bypass  = 1;
+   dpu_desc.bs_mul_bypass  = 1;
+   dpu_desc.bs_relu_bypass = params->relu ? 0 : 1;
    dpu_desc.bn_bypass =1;
    dpu_desc.bn_alu_bypass = 1;
    dpu_desc.bn_mul_bypass = 1;
