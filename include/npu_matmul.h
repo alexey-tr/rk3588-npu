@@ -52,6 +52,14 @@ typedef struct {
    * accumulator's dtype: FP32 bits for the fp16/bf16 paths, int32 for int8. */
   uint8_t   bias_en;
   uint32_t  bias_bits;
+
+  /* Per-channel bias: bias[N] as fp32 must be appended by the caller right after the
+   * packed weights (byte off = weight_bytes) in the weights_dma buffer. gen_matmul then
+   * emits the BS BRDMA path (full DPU_RDMA block, BS_BASE = weights_dma + weight_bytes,
+   * qd_en=0, enable 0x1d). Mutually exclusive with scalar bias_en. */
+  uint8_t   pcbias_en;
+  /* OUT: regcfg_amount the generated task uses (footer offset). 104 plain, 122 w/ pcbias. */
+  uint16_t  regcfg_amount;
 } matmul_params_t;
 
 int gen_matmul_fp16(matmul_params_t *params);

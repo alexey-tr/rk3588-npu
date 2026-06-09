@@ -33,7 +33,12 @@
  * Were only using cna & core, dpu outputs to memory
  *
  */
-void gen_matmul_task(uint64_t *ops, npu_cna_desc *cna_desc, npu_core_desc *core_desc, npu_dpu_desc *dpu_desc) {
+/* Returns regcfg_amount (the config-word count, where the footer begins). pcbias!=0
+ * appends the full DPU_RDMA block (per-channel bias read from bs_base via BRDMA) and
+ * uses the 0x1d enable mask; bs_base is the folded fp32 bias DRAM addr (= weights +
+ * weight_bytes). Validated recipe — see vitals/matmul_pcbias.c. */
+int gen_matmul_task_ex(uint64_t *ops, npu_cna_desc *cna_desc, npu_core_desc *core_desc, npu_dpu_desc *dpu_desc,
+                    int pcbias, uint32_t bs_base) {
 
   uint32_t value;
 
@@ -194,10 +199,43 @@ void gen_matmul_task(uint64_t *ops, npu_cna_desc *cna_desc, npu_core_desc *core_
   ops[101] = NPUOP(OP_REG_DPU, 0x0, DPU_LUT_LE_SLOPE_SHIFT);
   ops[102] = NPUOP(OP_REG_DPU, 0x0, DPU_LUT_LO_SLOPE_SCALE);
   ops[103] = NPUOP(OP_REG_DPU, 0x0, DPU_LUT_LO_SLOPE_SHIFT);
-  ops[104] = NPUOP(OP_NONE, 0x0, 0x0);
-  ops[105] = NPUOP(OP_REG_PC, 0x0, PC_REGISTER_AMOUNTS);
-  ops[106] = NPUOP(OP_40, 0x0, 0x0);
-  ops[107] = NPUOP(OP_ENABLE, (PC_ENABLE_DPU | PC_ENABLE_CNA | PC_ENABLE), PC_OPERATION_ENABLE);
+
+  int j = 104;
+  uint32_t enable = PC_ENABLE_DPU | PC_ENABLE_CNA | PC_ENABLE;   /* 0xd */
+  if (pcbias) {
+    /* Full DPU_RDMA block — exact values from the validated recipe. The BS ALU reads
+     * the per-channel fp32 bias from bs_base (= folded after the weights) via BRDMA. */
+    enable |= PC_ENABLE_PPU;                                     /* 0x10 -> 0x1d: RDMA engine */
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0x0000000e,        DPU_RDMA_S_POINTER);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0,                 DPU_RDMA_DATA_CUBE_WIDTH);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, dpu_desc->height,  DPU_RDMA_DATA_CUBE_HEIGHT);   /* M-1 */
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, dpu_desc->channel, DPU_RDMA_DATA_CUBE_CHANNEL);  /* N-1 */
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0,                 DPU_RDMA_SRC_BASE_ADDR);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0x2,               DPU_RDMA_BRDMA_CFG);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, bs_base,           DPU_RDMA_BS_BASE_ADDR);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0,                 DPU_RDMA_NRDMA_CFG);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0,                 DPU_RDMA_BN_BASE_ADDR);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 1,                 DPU_RDMA_ERDMA_CFG);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0,                 DPU_RDMA_EW_BASE_ADDR);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0,                 DPU_RDMA_EW_SURF_STRIDE);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0x17850,           DPU_RDMA_FEATURE_MODE_CFG);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0,                 DPU_RDMA_SRC_DMA_CFG);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0,                 DPU_RDMA_SURF_NOTCH);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0,                 DPU_RDMA_PAD_CFG);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0x01010101,        DPU_RDMA_WEIGHT);
+    ops[j++] = NPUOP(OP_REG_DPU_RDMA, 0,                 DPU_RDMA_EW_SURF_NOTCH);
+  }
+  int regcfg_amount = j;
+  ops[j++] = NPUOP(OP_NONE, 0x0, 0x0);
+  ops[j++] = NPUOP(OP_REG_PC, 0x0, PC_REGISTER_AMOUNTS);
+  ops[j++] = NPUOP(OP_40, 0x0, 0x0);
+  ops[j++] = NPUOP(OP_ENABLE, enable, PC_OPERATION_ENABLE);
+  return regcfg_amount;
+}
+
+/* Backward-compatible 4-arg form (no per-channel bias) for conv/spike callers. */
+void gen_matmul_task(uint64_t *ops, npu_cna_desc *cna_desc, npu_core_desc *core_desc, npu_dpu_desc *dpu_desc) {
+  gen_matmul_task_ex(ops, cna_desc, core_desc, dpu_desc, 0, 0);
 }
 
 /*
@@ -295,7 +333,7 @@ static int gen_matmul_2byte(matmul_params_t *params, uint8_t prec) {
    cna_desc.decompress_addr0 = params->weights_dma;
 
    core_desc.proc_precision = prec;
-   core_desc.qd_en = 1;
+   core_desc.qd_en = params->pcbias_en ? 0 : 1;   /* RDMA/BRDMA needs qd_en=0 (per gold trace) */
    core_desc.dataout_height = cna_desc.dataout_height - 1;
    core_desc.dataout_width = cna_desc.dataout_width - 1;
    core_desc.dataout_channel = cna_desc.weight_kernels -1;
@@ -320,14 +358,18 @@ static int gen_matmul_2byte(matmul_params_t *params, uint8_t prec) {
     * ReLU, both in one pass -> relu(x + bias). Bypassed entirely for a plain matmul.
     * Bias runs on the accumulator before the WDMA output downcast (order-correct).
     * DPU_BS_RELUX_CMP_VALUE stays 0 (no upper clamp). Validated: vitals/relu.c (relu),
-    * vitals/matmul_bias.c (scalar bias). */
-   dpu_desc.bs_bypass      = (params->bias_en || params->relu) ? 0 : 1;
-   dpu_desc.bs_alu_bypass  = params->bias_en ? 0 : 1;
+    * vitals/matmul_bias.c (scalar bias). pcbias_en -> per-channel bias from BRDMA
+    * (bs_alu_src=1); see vitals/matmul_pcbias.c. */
+   {
+   int any_bias = params->bias_en || params->pcbias_en;
+   dpu_desc.bs_bypass      = (any_bias || params->relu) ? 0 : 1;
+   dpu_desc.bs_alu_bypass  = any_bias ? 0 : 1;
    dpu_desc.bs_alu_algo    = 2;   /* add */
-   dpu_desc.bs_alu_src     = 0;   /* operand from register (DPU_BS_ALU_CFG) */
+   dpu_desc.bs_alu_src     = params->pcbias_en ? 1 : 0;   /* 1=BRDMA (per-channel), 0=register (scalar) */
    dpu_desc.bs_alu_cfg     = params->bias_en ? params->bias_bits : 0;
    dpu_desc.bs_mul_bypass  = 1;
    dpu_desc.bs_relu_bypass = params->relu ? 0 : 1;
+   }
    dpu_desc.bn_bypass =1;
    dpu_desc.bn_alu_bypass = 1;
    dpu_desc.bn_mul_bypass = 1;
@@ -356,7 +398,10 @@ static int gen_matmul_2byte(matmul_params_t *params, uint8_t prec) {
    dpu_desc.channel_wdma = core_desc.dataout_channel;
    dpu_desc.surf_add = (!params->fp32tofp16) ? dpu_desc.dst_surf_stride * 4 : dpu_desc.dst_surf_stride * 2;
 
-   gen_matmul_task(params->tasks,&cna_desc,&core_desc,&dpu_desc);
+   /* per-channel bias is folded as fp32 right after the weights -> BS_BASE = weights + weight_bytes */
+   uint32_t bs_base = params->pcbias_en ? (params->weights_dma + cna_desc.weight_bytes) : 0;
+   params->regcfg_amount = gen_matmul_task_ex(params->tasks,&cna_desc,&core_desc,&dpu_desc,
+                                           params->pcbias_en, bs_base);
 
    return 0;
 }
@@ -507,7 +552,7 @@ int gen_matmul_int8(matmul_params_t *params) {
    dpu_desc.channel_wdma = core_desc.dataout_channel;
    dpu_desc.surf_add = dpu_desc.dst_surf_stride * 8;
 
-   gen_matmul_task(params->tasks,&cna_desc,&core_desc,&dpu_desc);
+   params->regcfg_amount = gen_matmul_task_ex(params->tasks,&cna_desc,&core_desc,&dpu_desc, 0, 0);
 
    return 0;
 }

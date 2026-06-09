@@ -214,6 +214,7 @@
 #define OP_REG_CNA  (BLOCK_CNA | PC_OP_01)  // ??
 #define OP_REG_CORE (BLOCK_CORE | PC_OP_01) // ??
 #define OP_REG_DPU  (BLOCK_DPU | PC_OP_01)  // ??
+#define OP_REG_DPU_RDMA (BLOCK_DPU_RDMA | PC_OP_01)
 
 #define OP_40     (PC_OP_40 | PC_OP_01)     // ??
 #define OP_ENABLE (PC_OP_ENABLE | PC_OP_01) // ??
