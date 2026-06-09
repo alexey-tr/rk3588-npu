@@ -45,6 +45,13 @@ typedef struct {
    * matmul, default); 1 = clamp negatives to zero on the accumulator before the
    * output downcast. No extra DMA/op-count cost — see gen_matmul_task BS bits. */
   uint8_t   relu;
+
+  /* Fuse a SCALAR bias add into the BS-stage ALU (operand from register, no DMA):
+   * out = x + bias, applied before ReLU when both are set (relu(x + bias)).
+   * bias_en=0 (default) bypasses it. bias_bits is the scalar reinterpreted in the
+   * accumulator's dtype: FP32 bits for the fp16/bf16 paths, int32 for int8. */
+  uint8_t   bias_en;
+  uint32_t  bias_bits;
 } matmul_params_t;
 
 int gen_matmul_fp16(matmul_params_t *params);

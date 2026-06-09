@@ -139,10 +139,11 @@ void gen_matmul_task(uint64_t *ops, npu_cna_desc *cna_desc, npu_core_desc *core_
   ops[61] = NPUOP(OP_REG_DPU, 0x0, DPU_DATA_CUBE_NOTCH_ADDR);
   value = ((dpu_desc->channel & 0x1FFF) << 16) | (dpu_desc->channel & 0x1FFF);
   ops[62] = NPUOP(OP_REG_DPU, value, DPU_DATA_CUBE_CHANNEL);
-  value = ((dpu_desc->bs_relu_bypass & 0x1) << 6) | ((dpu_desc->bs_mul_bypass & 0x1) << 4) |
+  value = ((dpu_desc->bs_alu_algo & 0xf) << 16) | ((dpu_desc->bs_alu_src & 0x1) << 8) |
+    ((dpu_desc->bs_relu_bypass & 0x1) << 6) | ((dpu_desc->bs_mul_bypass & 0x1) << 4) |
     ((dpu_desc->bs_alu_bypass & 0x1) << 1) | (dpu_desc->bs_bypass & 0x1);
   ops[63] = NPUOP(OP_REG_DPU, value, DPU_BS_CFG);
-  ops[64] = NPUOP(OP_REG_DPU, 0x0, DPU_BS_ALU_CFG);
+  ops[64] = NPUOP(OP_REG_DPU, dpu_desc->bs_alu_cfg, DPU_BS_ALU_CFG);
   ops[65] = NPUOP(OP_REG_DPU, 0x0, DPU_BS_MUL_CFG);
   ops[66] = NPUOP(OP_REG_DPU, 0x0, DPU_BS_RELUX_CMP_VALUE);
   value = ((dpu_desc->size_e_2 & 0x7) << 8) | ((dpu_desc->size_e_1 & 0x7) << 5) | 
@@ -315,13 +316,16 @@ static int gen_matmul_2byte(matmul_params_t *params, uint8_t prec) {
    dpu_desc.width = core_desc.dataout_width ;
    dpu_desc.height = core_desc.dataout_height;
    dpu_desc.channel = core_desc.dataout_channel;
-   /* BS stage: bypassed for a plain matmul. params->relu engages only the BS ReLU
-    * sub-unit (alu/mul still bypassed) -> max(0, x) on the accumulator, applied
-    * before the WDMA output downcast (order-correct: relu commutes with the cast).
-    * DPU_BS_RELUX_CMP_VALUE stays 0 (gen_matmul_task ops[66]) so there is no upper
-    * clamp. Validated recipe: vitals/relu.c. */
-   dpu_desc.bs_bypass      = params->relu ? 0 : 1;
-   dpu_desc.bs_alu_bypass  = 1;
+   /* BS stage: scalar bias-add (ALU, operand from the DPU_BS_ALU_CFG register) and/or
+    * ReLU, both in one pass -> relu(x + bias). Bypassed entirely for a plain matmul.
+    * Bias runs on the accumulator before the WDMA output downcast (order-correct).
+    * DPU_BS_RELUX_CMP_VALUE stays 0 (no upper clamp). Validated: vitals/relu.c (relu),
+    * vitals/matmul_bias.c (scalar bias). */
+   dpu_desc.bs_bypass      = (params->bias_en || params->relu) ? 0 : 1;
+   dpu_desc.bs_alu_bypass  = params->bias_en ? 0 : 1;
+   dpu_desc.bs_alu_algo    = 2;   /* add */
+   dpu_desc.bs_alu_src     = 0;   /* operand from register (DPU_BS_ALU_CFG) */
+   dpu_desc.bs_alu_cfg     = params->bias_en ? params->bias_bits : 0;
    dpu_desc.bs_mul_bypass  = 1;
    dpu_desc.bs_relu_bypass = params->relu ? 0 : 1;
    dpu_desc.bn_bypass =1;
@@ -474,10 +478,13 @@ int gen_matmul_int8(matmul_params_t *params) {
    dpu_desc.width = core_desc.dataout_width ;
    dpu_desc.height = core_desc.dataout_height;
    dpu_desc.channel = core_desc.dataout_channel;
-   /* BS ReLU on the int32 accumulator: max(0, x) clamps negatives, valid in any
-    * numeric format. See gen_matmul_2byte for the recipe rationale. */
-   dpu_desc.bs_bypass      = params->relu ? 0 : 1;
-   dpu_desc.bs_alu_bypass  = 1;
+   /* BS scalar bias-add (int32 operand) and/or ReLU on the int32 accumulator.
+    * See gen_matmul_2byte for the recipe rationale. */
+   dpu_desc.bs_bypass      = (params->bias_en || params->relu) ? 0 : 1;
+   dpu_desc.bs_alu_bypass  = params->bias_en ? 0 : 1;
+   dpu_desc.bs_alu_algo    = 2;   /* add */
+   dpu_desc.bs_alu_src     = 0;   /* operand from register (DPU_BS_ALU_CFG) */
+   dpu_desc.bs_alu_cfg     = params->bias_en ? params->bias_bits : 0;
    dpu_desc.bs_mul_bypass  = 1;
    dpu_desc.bs_relu_bypass = params->relu ? 0 : 1;
    dpu_desc.bn_bypass =1;
