@@ -37,14 +37,23 @@
  * appends the full DPU_RDMA block (per-channel bias read from bs_base via BRDMA) and
  * uses the 0x1d enable mask; bs_base is the folded fp32 bias DRAM addr (= weights +
  * weight_bytes). Validated recipe — see vitals/matmul_pcbias.c. */
+/* When set, gen_matmul_task_ex flips the CNA from multiply-accumulate (sum) to MAX-reduce by
+ * OR-ing the reduce-mode bits (0x60008000) into CNA_CONV_CON1 — the same bits RKNN's softmax
+ * max-reduce uses. A matmul-by-ones in this mode computes max(A) instead of sum(A). Toggle around
+ * a single npu_matmul_fp16 call (npu_max_lastaxis_fp16). Only valid for a single K-tile (no
+ * cross-tile accumulation), which covers reductions up to the per-tile K limit. */
+int g_cna_reduce_max = 0;
+void npu_cna_set_reduce_max(int on) { g_cna_reduce_max = on; }
+
 int gen_matmul_task_ex(uint64_t *ops, npu_cna_desc *cna_desc, npu_core_desc *core_desc, npu_dpu_desc *dpu_desc,
                     int pcbias, uint32_t bs_base) {
 
   uint32_t value;
 
   ops[0] = NPUOP(OP_REG_DPU, 0xE, DPU_S_POINTER);
-  value = ((cna_desc->proc_precision & 0x7) <<7) |  ((cna_desc->in_precision & 0x7)<<4) | 
+  value = ((cna_desc->proc_precision & 0x7) <<7) |  ((cna_desc->in_precision & 0x7)<<4) |
     (cna_desc->conv_mode & 0xf);
+  if (g_cna_reduce_max) value |= 0x60008000;   /* CNA max-reduce mode (vs matmul-accumulate) */
   ops[1] = NPUOP(OP_REG_CNA, value, CNA_CONV_CON1);
   value = ((cna_desc->kernel_groups & 0xFF) << 16) | ((cna_desc->feature_grains & 0x3FF) << 4);
   ops[2] = NPUOP(OP_REG_CNA, value, CNA_CONV_CON2);
