@@ -150,7 +150,7 @@ int gen_matmul_task_ex(uint64_t *ops, npu_cna_desc *cna_desc, npu_core_desc *cor
   ops[59] = NPUOP(OP_REG_DPU, value, DPU_DATA_CUBE_WIDTH);
   value = dpu_desc->height & 0x1FFF;
   ops[60] = NPUOP(OP_REG_DPU, value, DPU_DATA_CUBE_HEIGHT);
-  ops[61] = NPUOP(OP_REG_DPU, 0x0, DPU_DATA_CUBE_NOTCH_ADDR);
+  ops[61] = NPUOP(OP_REG_DPU, dpu_desc->notch, DPU_DATA_CUBE_NOTCH_ADDR);
   value = ((dpu_desc->channel & 0x1FFF) << 16) | (dpu_desc->channel & 0x1FFF);
   ops[62] = NPUOP(OP_REG_DPU, value, DPU_DATA_CUBE_CHANNEL);
   value = ((dpu_desc->bs_alu_algo & 0xf) << 16) | ((dpu_desc->bs_alu_src & 0x1) << 8) |
@@ -360,6 +360,7 @@ static int gen_matmul_2byte(matmul_params_t *params, uint8_t prec) {
                                             : (uint32_t)(cna_desc.dataout_height * cna_desc.dataout_width);
      dpu_desc.dst_surf_stride = row;
    }
+   dpu_desc.notch = 0;   /* tiled NC1HWC2 default; row-major sets this below */
    dpu_desc.width = core_desc.dataout_width ;
    dpu_desc.height = core_desc.dataout_height;
    dpu_desc.channel = core_desc.dataout_channel;
@@ -406,6 +407,16 @@ static int gen_matmul_2byte(matmul_params_t *params, uint8_t prec) {
    dpu_desc.height_wdma = core_desc.dataout_height;
    dpu_desc.channel_wdma = core_desc.dataout_channel;
    dpu_desc.surf_add = (!params->fp32tofp16) ? dpu_desc.dst_surf_stride * 4 : dpu_desc.dst_surf_stride * 2;
+
+   if (params->row_major) {
+     /* Row-major [M,N] (NHC1WC2): consecutive C1 surfaces 1 cell apart -> all N channels of a
+      * row are contiguous (== plain row-major fp16). notch = surfaces-per-row-1 = N/8-1 tells
+      * the WDMA how many surfaces wrap per row. surf_add = out elem bytes. RE'd from RKNN T1. */
+     uint32_t nfull = params->n_full ? params->n_full : params->n;
+     dpu_desc.dst_surf_stride = 1;
+     dpu_desc.notch = (((nfull/8 - 1) & 0xffff) << 16) | ((nfull/8 - 1) & 0xffff);
+     dpu_desc.surf_add = params->fp32tofp16 ? 2 : 4;
+   }
 
    /* per-channel bias is folded as fp32 right after the weights -> BS_BASE = weights + weight_bytes */
    uint32_t bs_base = params->pcbias_en ? (params->weights_dma + cna_desc.weight_bytes) : 0;
@@ -529,6 +540,7 @@ int gen_matmul_int8(matmul_params_t *params) {
                                             : (uint32_t)(cna_desc.dataout_height * cna_desc.dataout_width);
      dpu_desc.dst_surf_stride = row;
    }
+   dpu_desc.notch = 0;   /* int8 path: tiled NC1HWC2 only (row_major unsupported here) */
    dpu_desc.width = core_desc.dataout_width ;
    dpu_desc.height = core_desc.dataout_height;
    dpu_desc.channel = core_desc.dataout_channel;

@@ -58,6 +58,19 @@ typedef struct {
    * emits the BS BRDMA path (full DPU_RDMA block, BS_BASE = weights_dma + weight_bytes,
    * qd_en=0, enable 0x1d). Mutually exclusive with scalar bias_en. */
   uint8_t   pcbias_en;
+
+  /* Emit a ROW-MAJOR [M,N] output (NHC1WC2 — C1 surfaces adjacent within a row) instead of
+   * the default surface-tiled NC1HWC2. Lets the caller read the result as a plain row-major
+   * fp16 [M,N] buffer with no bounce-unpack, and lets a chained EW-LUT (silu) read it flat.
+   * Recipe (RE'd from RKNN linear_silu T1): dst_surf_stride=1, notch=((N/8-1) both halves),
+   * surf_add=out_elem_bytes. fp16-output (fp32tofp16=1) only. Requires N%8==0. */
+  uint8_t   row_major;
+
+  /* Full output-buffer row width (in N elements) for a multi-tile row-major output: each tile
+   * writes its [m,n] sub-rect into a shared [M_full,N_full] row-major buffer, so the notch
+   * (surfaces-per-row) must reference N_full, not the tile's n. 0 = single-tile (use n). */
+  uint16_t  n_full;
+
   /* OUT: regcfg_amount the generated task uses (footer offset). 104 plain, 122 w/ pcbias. */
   uint16_t  regcfg_amount;
 } matmul_params_t;

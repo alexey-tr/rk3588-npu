@@ -54,6 +54,7 @@ typedef struct npu_dpu_desc {
  uint8_t proc_precision;    // 0x4010 [2:0]
  uint32_t dst_base_addr;    // 0x4020
  uint32_t dst_surf_stride;  // 0x4024
+ uint32_t notch;            // 0x4038 (DPU_DATA_CUBE_NOTCH_ADDR; row-major: surfaces-per-row-1)
  uint16_t width;            // 0x4030
  uint16_t height;           // 0x4034
  uint16_t channel;          // 0x403C [28:16] [12:0]
